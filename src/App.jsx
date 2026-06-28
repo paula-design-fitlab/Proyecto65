@@ -779,7 +779,7 @@ function Recetario() {
 }
 
 // ─── HOY ───────────────────────────────────────────────────────────────────
-function Hoy({ menuSemanal, pesoRegistros, registroHoy, setRegistroHoy }) {
+function Hoy({ menuSemanal, pesoRegistros, registroHoy, setRegistroHoy, seguimientoHoy, setSeguimientoHoy }) {
   const hoy = new Date()
   const diasJS = ['domingo','lunes','martes','miercoles','jueves','viernes','sabado']
   const diaHoy = diasJS[hoy.getDay()]
@@ -787,12 +787,10 @@ function Hoy({ menuSemanal, pesoRegistros, registroHoy, setRegistroHoy }) {
   const menuHoy = menuSemanal[diaHoy] || MENU_BASE[diaHoy]
   const hora = hoy.getHours()
   const proxima = hora < 13 ? 'comida' : hora < 18 ? 'merienda' : 'cena'
-  const ultimoPeso = pesoRegistros.length > 0 ? pesoRegistros[pesoRegistros.length-1].peso : PERFIL.pesoInicial
-  const perdido = +(PERFIL.pesoInicial - ultimoPeso).toFixed(1)
-  const progreso = Math.max(0, Math.min(100, (perdido/(PERFIL.pesoInicial-PERFIL.pesoObjetivo))*100))
   const saludos = hora < 14 ? 'Buenos días' : hora < 21 ? 'Buenas tardes' : 'Buenas noches'
   const [notaAbierta, setNotaAbierta] = useState(null)
   const [notaTexto, setNotaTexto] = useState('')
+  const [seguimientoAbierto, setSeguimientoAbierto] = useState(false)
 
   const getReg = (tipo) => registroHoy.find(r => r.tipo === tipo)
 
@@ -803,6 +801,12 @@ function Hoy({ menuSemanal, pesoRegistros, registroHoy, setRegistroHoy }) {
     if (data) setRegistroHoy(prev => [...prev.filter(r => r.tipo!==tipo), data[0]])
   }
 
+  const upsertSeguimiento = async (cambios) => {
+    const payload = { usuario:'paula', fecha:fechaStr, ...seguimientoHoy, ...cambios }
+    const { data } = await supabase.from('p65_seguimiento').upsert(payload, { onConflict:'usuario,fecha' }).select()
+    if (data) setSeguimientoHoy(data[0])
+  }
+
   const comidas = [
     { tipo:'comida',   emoji:'🍽', hora:'12:30', cls:'comida-emoji-comida',   label:'Comida principal' },
     { tipo:'merienda', emoji:'🍎', hora:'17:00', cls:'comida-emoji-merienda', label:'Merienda' },
@@ -810,6 +814,12 @@ function Hoy({ menuSemanal, pesoRegistros, registroHoy, setRegistroHoy }) {
   ]
 
   const comidas_hechas = registroHoy.filter(r => r.comido).length
+  const seg = seguimientoHoy || {}
+
+  const nivelLabel = (v) => v === 1 ? 'Muy bajo' : v === 2 ? 'Bajo' : v === 3 ? 'Normal' : v === 4 ? 'Bueno' : v === 5 ? 'Excelente' : '—'
+  const hambreLabel = (v) => v === 1 ? 'Sin hambre' : v === 2 ? 'Poca' : v === 3 ? 'Normal' : v === 4 ? 'Bastante' : v === 5 ? 'Mucha' : '—'
+
+  const seguimientoCompleto = seg.energia || seg.hambre || seg.entrenamiento !== undefined
 
   return (
     <>
@@ -818,12 +828,83 @@ function Hoy({ menuSemanal, pesoRegistros, registroHoy, setRegistroHoy }) {
         <div className="header-titulo">Hoy es <span>{DIAS_FULL[diaHoy]}</span></div>
       </div>
       <div className="content">
+
+        {/* SEGUIMIENTO DEL DÍA — siempre visible, colapsable */}
+        <div className="card" style={{ marginBottom:12, padding:0, overflow:'hidden' }}>
+          <div
+            style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 16px', cursor:'pointer' }}
+            onClick={() => setSeguimientoAbierto(!seguimientoAbierto)}
+          >
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <span style={{ fontSize:18 }}>📊</span>
+              <div>
+                <div style={{ fontSize:14, fontWeight:500 }}>Cómo estoy hoy</div>
+                {!seguimientoAbierto && seguimientoCompleto && (
+                  <div style={{ fontSize:11, color:P.textoSuave, marginTop:1 }}>
+                    {seg.energia ? `Energía ${seg.energia}/5` : ''}{seg.hambre ? ` · Hambre ${seg.hambre}/5` : ''}{seg.entrenamiento ? ' · 💪 Entrenamiento' : ''}
+                  </div>
+                )}
+                {!seguimientoAbierto && !seguimientoCompleto && (
+                  <div style={{ fontSize:11, color:P.textoSuave, marginTop:1 }}>Toca para registrar</div>
+                )}
+              </div>
+            </div>
+            <span style={{ fontSize:14, color:P.textoSuave, transition:'transform 0.2s', display:'inline-block', transform:seguimientoAbierto?'rotate(180deg)':'none' }}>▾</span>
+          </div>
+
+          {seguimientoAbierto && (
+            <div style={{ padding:'0 16px 16px', borderTop:`1px solid ${P.borde}` }}>
+              {/* Energía */}
+              <div style={{ marginTop:14 }}>
+                <div style={{ fontSize:12, color:P.textoSuave, marginBottom:8, fontWeight:500 }}>ENERGÍA · {nivelLabel(seg.energia)}</div>
+                <div style={{ display:'flex', gap:8 }}>
+                  {[1,2,3,4,5].map(n => (
+                    <button key={n} onClick={() => upsertSeguimiento({ energia: seg.energia===n ? null : n })}
+                      style={{ flex:1, height:36, borderRadius:10, border:`1px solid ${seg.energia>=n ? P.melocoton : P.borde}`, background: seg.energia>=n ? P.melocotonSuave : 'transparent', cursor:'pointer', fontSize:16 }}>
+                      {n <= (seg.energia||0) ? '⚡' : '○'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Hambre */}
+              <div style={{ marginTop:14 }}>
+                <div style={{ fontSize:12, color:P.textoSuave, marginBottom:8, fontWeight:500 }}>HAMBRE · {hambreLabel(seg.hambre)}</div>
+                <div style={{ display:'flex', gap:8 }}>
+                  {[1,2,3,4,5].map(n => (
+                    <button key={n} onClick={() => upsertSeguimiento({ hambre: seg.hambre===n ? null : n })}
+                      style={{ flex:1, height:36, borderRadius:10, border:`1px solid ${seg.hambre>=n ? P.lavanda : P.borde}`, background: seg.hambre>=n ? P.lavandaSuave : 'transparent', cursor:'pointer', fontSize:16 }}>
+                      {n <= (seg.hambre||0) ? '🍽' : '○'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Entrenamiento */}
+              <div style={{ marginTop:14 }}>
+                <div style={{ fontSize:12, color:P.textoSuave, marginBottom:8, fontWeight:500 }}>ENTRENAMIENTO</div>
+                <div style={{ display:'flex', gap:8 }}>
+                  <button onClick={() => upsertSeguimiento({ entrenamiento: true })}
+                    style={{ flex:1, padding:'10px', borderRadius:10, border:`1px solid ${seg.entrenamiento===true ? P.sage : P.borde}`, background: seg.entrenamiento===true ? P.sageSuave : 'transparent', cursor:'pointer', fontSize:13, fontWeight: seg.entrenamiento===true ? 600 : 400, color: seg.entrenamiento===true ? '#3A6B3E' : P.textoMedio }}>
+                    💪 Sí, he entrenado
+                  </button>
+                  <button onClick={() => upsertSeguimiento({ entrenamiento: false })}
+                    style={{ flex:1, padding:'10px', borderRadius:10, border:`1px solid ${seg.entrenamiento===false ? P.borde : P.borde}`, background: seg.entrenamiento===false ? P.fondo : 'transparent', cursor:'pointer', fontSize:13, color: P.textoMedio }}>
+                    😴 Día de descanso
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {comidas_hechas > 0 && (
           <div style={{ background:P.sageSuave, borderRadius:14, padding:'10px 14px', marginBottom:12, display:'flex', alignItems:'center', gap:8 }}>
             <span style={{ fontSize:16 }}>✅</span>
             <span style={{ fontSize:13, color:'#3A6B3E' }}>{comidas_hechas} de 3 comidas registradas hoy</span>
           </div>
         )}
+
         <p className="seccion">Tus comidas de hoy</p>
         {comidas.map(({ tipo, emoji, hora, cls, label }) => {
           const reg = getReg(tipo)
@@ -836,7 +917,7 @@ function Hoy({ menuSemanal, pesoRegistros, registroHoy, setRegistroHoy }) {
                   <div className="comida-hora">{label} · {hora}</div>
                   <div className="comida-texto">{menuHoy[tipo]}</div>
                   {reg?.nota && <div style={{ fontSize:12, color:P.textoSuave, marginTop:4, fontStyle:'italic' }}>"{reg.nota}"</div>}
-                  {reg?.puntuacion > 0 && <div style={{ fontSize:12, marginTop:2 }}>{'⭐'.repeat(reg.puntuacion)}</div>}
+                  {reg?.puntuacion > 0 && <div style={{ fontSize:12, marginTop:2 }}>{"⭐".repeat(reg.puntuacion)}</div>}
                 </div>
               </div>
               <div className="comida-acciones">
@@ -865,22 +946,7 @@ function Hoy({ menuSemanal, pesoRegistros, registroHoy, setRegistroHoy }) {
           )
         })}
 
-        <p className="seccion">Tu progreso</p>
-        <div className="card card-crema">
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:12 }}>
-            <div>
-              <div style={{ fontSize:12, color:P.textoSuave, marginBottom:2 }}>Peso actual</div>
-              <div style={{ fontSize:32, fontWeight:600 }}>{ultimoPeso} <span style={{ fontSize:16, fontWeight:400, color:P.textoSuave }}>kg</span></div>
-            </div>
-            <div style={{ textAlign:'right' }}>
-              {perdido>0 && <div style={{ fontSize:13, color:'#4A7A4E', fontWeight:500 }}>−{perdido} kg perdidos 🎉</div>}
-              <div style={{ fontSize:13, color:P.textoSuave }}>{(ultimoPeso-PERFIL.pesoObjetivo).toFixed(1)} kg hasta el objetivo</div>
-            </div>
-          </div>
-          <div className="progreso-bar"><div className="progreso-fill" style={{ width:`${progreso}%` }} /></div>
-          <div className="progreso-nums"><span>{PERFIL.pesoInicial} kg</span><span style={{ color:P.acento, fontWeight:500 }}>{progreso.toFixed(0)}%</span><span>{PERFIL.pesoObjetivo} kg</span></div>
-        </div>
-        <div className="stat-row">
+        <div className="stat-row" style={{ marginTop:8 }}>
           <div className="stat-box"><div className="stat-num">1550 <span className="stat-unit">kcal</span></div><div className="stat-label">Objetivo diario</div></div>
           <div className="stat-box"><div className="stat-num">130 <span className="stat-unit">g</span></div><div className="stat-label">Proteína</div></div>
         </div>
@@ -1187,6 +1253,7 @@ export default function App() {
   const [pesoRegistros, setPesoRegistros] = useState([])
   const [registroHoy, setRegistroHoy] = useState([])
   const [recetas, setRecetas] = useState([])
+  const [seguimientoHoy, setSeguimientoHoy] = useState(null)
 
   useEffect(() => { cargar() }, [])
 
@@ -1200,6 +1267,8 @@ export default function App() {
     if (r) setRegistroHoy(r)
     const { data:rec } = await supabase.from('p65_recetas').select('*').eq('usuario','paula').order('created_at',{ascending:false})
     if (rec) setRecetas(rec)
+    const { data:seg } = await supabase.from('p65_seguimiento').select('*').eq('usuario','paula').eq('fecha',fechaHoy).single()
+    if (seg) setSeguimientoHoy(seg)
   }
 
   const guardarMenu = async (menu) => {
@@ -1224,7 +1293,7 @@ export default function App() {
     <>
       <style>{css}</style>
       <div className="app">
-        {pantalla==='hoy'        && <Hoy menuSemanal={menuSemanal} pesoRegistros={pesoRegistros} registroHoy={registroHoy} setRegistroHoy={setRegistroHoy} />}
+        {pantalla==='hoy'        && <Hoy menuSemanal={menuSemanal} pesoRegistros={pesoRegistros} registroHoy={registroHoy} setRegistroHoy={setRegistroHoy} seguimientoHoy={seguimientoHoy} setSeguimientoHoy={setSeguimientoHoy} />}
         {pantalla==='menu'       && <Menu menuSemanal={menuSemanal} setMenuSemanal={setMenuSemanal} guardarMenu={guardarMenu} recetas={recetas} />}
         {pantalla==='recetario'  && <Recetario />}
         {pantalla==='batch'      && <BatchCooking recetas={recetas} />}
