@@ -458,6 +458,28 @@ function Recetas() {
 
 // ─── ¿QUÉ COMO? ────────────────────────────────────────────────────────────
 
+function RenderMD({ texto }) {
+  const lineas = texto.split("\n")
+  const elementos = []
+  let i = 0
+  while (i < lineas.length) {
+    const l = lineas[i]
+    if (!l.trim()) { elementos.push(React.createElement("div", { key: i, style: { height: 8 } })); i++; continue }
+    if (l.startsWith("## ")) {
+      elementos.push(React.createElement("div", { key: i, style: { fontSize: 15, fontWeight: 600, color: "#2D2D2D", marginTop: 14, marginBottom: 4 } }, l.replace("## ","").replace(/\*\*/g,"")))
+    } else if (l.startsWith("- ") || l.startsWith("\u2013 ")) {
+      const txt = l.replace(/^[-\u2013] /,"")
+      elementos.push(React.createElement("div", { key: i, style: { display:"flex", gap:8, marginBottom:3 } }, React.createElement("span", { style: { color:"#FFCBA4", flexShrink:0 } }, "·"), React.createElement("span", { style: { fontSize:14, lineHeight:1.6 }, dangerouslySetInnerHTML: { __html: txt.replace(/\*\*(.+?)\*\*/g,"<strong>$1<\/strong>") } })))
+    } else if (l.startsWith("---")) {
+      elementos.push(React.createElement("div", { key: i, style: { height:1, background:"#EEE8E2", margin:"10px 0" } }))
+    } else {
+      elementos.push(React.createElement("p", { key: i, style: { fontSize:14, lineHeight:1.7, marginBottom:4 }, dangerouslySetInnerHTML: { __html: l.replace(/\*\*(.+?)\*\*/g,"<strong>$1<\/strong>") } }))
+    }
+    i++
+  }
+  return React.createElement("div", null, ...elementos)
+}
+
 function QueComoHoy({ menuSemanal }) {
   const [filtros, setFiltros] = useState({ tiempo: '', proteina: '', cond: '' })
   const [modo, setModo] = useState('filtros')
@@ -517,7 +539,7 @@ Sugiere 2-3 opciones concretas. Para cada una: nombre, ingredientes principales,
             <p className="seccion">Sugerencias para ti</p>
             {cargando
               ? <div className="card"><div className="ia-dots"><div className="ia-dot"/><div className="ia-dot"/><div className="ia-dot"/></div></div>
-              : <div className="ia-burbuja">{respuesta}</div>
+              : <div className="ia-burbuja"><RenderMD texto={respuesta} /></div>
             }
             {!cargando && <button className="btn btn-secundario" style={{ marginTop: 10 }} onClick={buscar}>🔄 Otras opciones</button>}
           </>
