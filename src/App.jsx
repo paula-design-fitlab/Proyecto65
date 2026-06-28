@@ -344,6 +344,87 @@ function DetalleReceta({ receta, onClose, onEdit, onDelete }) {
   )
 }
 
+
+// ─── IMPORTAR CON IA ───────────────────────────────────────────────────────
+function ImportarConIA({ onImportada, onCancelar }) {
+  const [descripcion, setDescripcion] = useState('')
+  const [cargando, setCargando] = useState(false)
+  const [error, setError] = useState('')
+
+  const generar = async () => {
+    if (!descripcion.trim()) return
+    setCargando(true); setError('')
+    const prompt = `Eres el asistente de recetas de Proyecto 65. El usuario describe una receta y tú generas la ficha completa.
+
+Descripción: "${descripcion}"
+
+Responde SOLO con un JSON válido, sin texto adicional, sin markdown:
+{"nombre":"...","descripcion":"...","categoria":"comida","raciones":1,"tiempo":20,"dificultad":"fácil","ingredientes":["200g pollo"],"elaboracion":["Paso 1"],"calorias":400,"proteina":35,"carbos":20,"grasas":12,"fibra":3,"metodo":["sartén"],"taper":true,"batch":false,"congelable":false,"conservacion_nevera":"3 días","etiquetas":["alto en proteína"],"estado":"pendiente"}
+
+Categorías válidas: comida, cena, merienda, desayuno, dulce, batch cooking, exprés
+Métodos válidos: sartén, horno, freidora de aire, vaporera, microondas, sin cocinar
+Adapta al perfil: Paula 24a, objetivo perder grasa, le gustan pollo/salmón/merluza/atún/bonito/gambas/sepia/huevos/solomillo, no pepino ni espinacas.`
+
+    try {
+      const res = await fetch('/.netlify/functions/claude', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ messages:[{ role:'user', content:prompt }] })
+      })
+      const data = await res.json()
+      const texto = data.content?.[0]?.text || ''
+      const jsonMatch = texto.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) throw new Error('no json')
+      const receta = JSON.parse(jsonMatch[0])
+      onImportada(receta)
+    } catch {
+      setError('No pude generar la receta. Inténtalo de nuevo con más detalle.')
+    }
+    setCargando(false)
+  }
+
+  const ejemplos = [
+    'Pollo al limón con arroz, 20 minutos, para táper',
+    'Salmón al horno con patatas, fácil, batch cooking',
+    'Yogur griego con fresas y granola, merienda rápida',
+    'Tortilla de champiñones y pimiento, cena ligera',
+  ]
+
+  return (
+    <div className="pantalla-full">
+      <div className="detalle-header">
+        <div className="back-btn" onClick={onCancelar}>←</div>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:11, color:P.textoSuave, marginBottom:2 }}>Recetario</div>
+          <div style={{ fontSize:17, fontWeight:600 }}>Importar con IA ✨</div>
+        </div>
+      </div>
+      <div className="detalle-content">
+        <div className="card card-melocoton" style={{ marginBottom:20, textAlign:'center', padding:20 }}>
+          <div style={{ fontSize:32, marginBottom:8 }}>✨</div>
+          <div style={{ fontSize:15, fontWeight:600, marginBottom:4 }}>Describe la receta</div>
+          <div style={{ fontSize:13, color:P.textoMedio }}>La IA rellena todos los campos. Tú solo revisas y guardas.</div>
+        </div>
+        <div className="input-grupo">
+          <div className="input-label">Describe la receta en tus palabras</div>
+          <textarea className="input" rows={4} style={{ resize:'none' }}
+            placeholder="Ej: Pollo al limón con arroz, 20 min, sirve para táper, alta proteína..."
+            value={descripcion} onChange={e => setDescripcion(e.target.value)} autoFocus />
+        </div>
+        {error && <div style={{ background:'#FFF0F0', border:'1px solid #F2B8B8', borderRadius:12, padding:'10px 14px', fontSize:13, color:'#C05050', marginBottom:12 }}>{error}</div>}
+        <button className="btn btn-primario" onClick={generar} disabled={cargando||!descripcion.trim()} style={{ marginBottom:16 }}>
+          {cargando ? 'Generando receta...' : '✨ Generar receta'}
+        </button>
+        <p className="seccion">Ejemplos — toca para usar</p>
+        {ejemplos.map((e,i) => (
+          <div key={i} style={{ background:P.fondoCard, border:`1px solid ${P.borde}`, borderRadius:12, padding:'10px 14px', marginBottom:8, cursor:'pointer', fontSize:13, color:P.textoMedio }} onClick={() => setDescripcion(e)}>
+            "{e}"
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ─── FORMULARIO RECETA ─────────────────────────────────────────────────────
 function FormReceta({ recetaInicial, onGuardar, onCancelar }) {
   const vacio = {
@@ -561,7 +642,7 @@ function FormReceta({ recetaInicial, onGuardar, onCancelar }) {
 function Recetario() {
   const [recetas, setRecetas] = useState([])
   const [cargando, setCargando] = useState(true)
-  const [vista, setVista] = useState('lista') // lista | detalle | form
+  const [vista, setVista] = useState('lista') // lista | detalle | form | importar
   const [recetaActiva, setRecetaActiva] = useState(null)
   const [filtros, setFiltros] = useState({ categoria:'', busqueda:'', etiqueta:'', taper:false, batch:false, congelable:false })
 
@@ -591,6 +672,11 @@ function Recetario() {
     setRecetaActiva(null)
   }
 
+  const onImportarIA = (datosIA) => {
+    setRecetaActiva(datosIA)
+    setVista('form')
+  }
+
   const filtradas = recetas.filter(r => {
     if (filtros.categoria && r.categoria !== filtros.categoria) return false
     if (filtros.busqueda && !r.nombre.toLowerCase().includes(filtros.busqueda.toLowerCase())) return false
@@ -600,6 +686,13 @@ function Recetario() {
     if (filtros.congelable && !r.congelable) return false
     return true
   })
+
+  if (vista === 'importar') return (
+    <ImportarConIA
+      onImportada={onImportarIA}
+      onCancelar={() => setVista('lista')}
+    />
+  )
 
   if (vista === 'form') return (
     <FormReceta
@@ -625,9 +718,10 @@ function Recetario() {
         <div className="header-titulo">Recetario <span>personal</span></div>
       </div>
       <div className="content">
-        <div style={{ display:'flex', gap:10, marginBottom:16 }}>
+        <div style={{ display:'flex', gap:8, marginBottom:16 }}>
           <input className="input" placeholder="Buscar receta..." value={filtros.busqueda} onChange={e => setFiltros(f => ({ ...f, busqueda:e.target.value }))} style={{ flex:1 }} />
-          <button className="btn btn-primario btn-sm" style={{ width:'auto', padding:'12px 16px' }} onClick={() => { setRecetaActiva(null); setVista('form') }}>+ Nueva</button>
+          <button className="btn btn-secundario btn-sm" style={{ width:'auto', padding:'12px 14px' }} onClick={() => setVista('importar')}>✨ IA</button>
+          <button className="btn btn-primario btn-sm" style={{ width:'auto', padding:'12px 14px' }} onClick={() => { setRecetaActiva(null); setVista('form') }}>+</button>
         </div>
 
         <div className="filtros-bar">
